@@ -776,103 +776,107 @@ function bindLangEvents(){
         var btn=document.getElementById('enRecordBtn');
         // 如果正在录音，点击停止
         if(STATE.enIsRecording){
-            if(STATE.enMediaRecorder&&STATE.enMediaRecorder.state==='recording')STATE.enMediaRecorder.stop();
+            if(STATE.enRecognition)STATE.enRecognition.stop();
             return;
         }
         var sents=enDialogue.sentences;var sent=sents[STATE.enSentenceIdx%sents.length];
-        if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){toast('当前浏览器不支持录音');return;}
+        // 使用 SpeechRecognition 直接收音+识别
+        var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+        if(!SR){toast('当前浏览器不支持语音识别，请使用Chrome');return;}
+        var rec=new SR();rec.lang='en-US';rec.interimResults=false;rec.maxAlternatives=1;
+        STATE.enRecognition=rec;
         STATE.enIsRecording=true;
         btn.textContent='⏹ 停止';btn.classList.add('recording');
-        navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
-            var mr=new MediaRecorder(stream);STATE.enMediaRecorder=mr;mr.start();
-            mr.ondataavailable=function(){};
-            mr.onstop=function(){
-                stream.getTracks().forEach(function(t){t.stop();});
-                STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');
-                showWordFeedback(sent);
-                addPoints(5);
-            };
-        }).catch(function(){STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');toast('麦克风权限被拒绝');});
-    });
-
-    function showWordFeedback(sentence){
-        var words=sentence.words||[];
-        var targetText=sentence.en.toLowerCase().replace(/[^a-z0-9\s]/g,'').trim();
+        document.getElementById('enScoreFill').style.width='30%';
+        document.getElementById('enScoreText').textContent='正在聆听...';
         
-        // 使用语音识别来做真实发音检测
-        if('webkitSpeechRecognition' in window || 'SpeechRecognition' in window){
-            var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-            var rec=new SR();rec.lang='en-US';rec.interimResults=false;rec.maxAlternatives=1;
+        rec.onresult=function(e){
+            STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');
+            STATE.enRecognition=null;
             
-            document.getElementById('enScoreFill').style.width='30%';
-            document.getElementById('enScoreText').textContent='正在识别发音...';
+            var transcript=e.results[0][0].transcript.toLowerCase().replace(/[^a-z0-9\s]/g,'').trim();
+            var confidence=e.results[0][0].confidence||0;
+            var words=sent.words||[];
+            var targetText=sent.en.toLowerCase().replace(/[^a-z0-9\s]/g,'').trim();
+            var spokenWords=transcript.split(/\s+/).filter(function(w){return w.length>0;});
             
-            rec.onresult=function(e){
-                var transcript=e.results[0][0].transcript.toLowerCase().replace(/[^a-z0-9\s]/g,'').trim();
-                var spokenWords=transcript.split(/\s+/).filter(function(w){return w.length>0;});
-                var targetWords=targetText.split(/\s+/);
-                
-                // 逐词比对：将识别结果与原文做模糊匹配
-                var badSet={};var goodSet={};
-                for(var i=0;i<words.length;i++){
-                    var tw=words[i].w.toLowerCase().replace(/[^a-z]/g,'');
-                    var matched=false;
-                    for(var j=0;j<spokenWords.length;j++){
-                        if(spokenWords[j] && !goodSet[j]){
-                            var sw=spokenWords[j].replace(/[^a-z]/g,'');
-                            // 使用编辑距离做模糊匹配
-                            var dist=levenshteinDistance(tw,sw);
-                            var threshold=Math.max(1,Math.floor(tw.length*0.3));
-                            if(dist<=threshold || sw===tw || sw.indexOf(tw)!==-1 || tw.indexOf(sw)!==-1){
-                                matched=true;goodSet[j]=true;break;
-                            }
+            // 如果没有识别到任何内容
+            if(spokenWords.length===0){
+                fallbackAllBad(words);
+                document.getElementById('enScoreText').textContent='句子得分: 0分 (未识别到语音，请大声朗读)';
+                addPoints(2);
+                return;
+            }
+            
+            // 逐词比对
+            var badSet={};var goodSet={};
+            for(var i=0;i<words.length;i++){
+                var tw=words[i].w.toLowerCase().replace(/[^a-z]/g,'');
+                var matched=false;
+                for(var j=0;j<spokenWords.length;j++){
+                    if(spokenWords[j] && !goodSet[j]){
+                        var sw=spokenWords[j].replace(/[^a-z]/g,'');
+                        var dist=levenshteinDistance(tw,sw);
+                        var threshold=Math.max(1,Math.floor(tw.length*0.3));
+                        if(dist<=threshold || sw===tw || sw.indexOf(tw)!==-1 || tw.indexOf(sw)!==-1){
+                            matched=true;goodSet[j]=true;break;
                         }
                     }
-                    if(!matched)badSet[i]=true;
                 }
-                
-                // 计算得分
-                var badCount=Object.keys(badSet).length;
-                var goodCount=words.length-badCount;
-                var score=words.length===0?80:Math.min(98,Math.round((goodCount/words.length)*90+8));
-                
-                document.getElementById('enScoreFill').style.width=score+'%';
-                document.getElementById('enScoreText').textContent='句子得分: '+score+'分 ('+goodCount+'/'+words.length+' 准确)';
-                
-                // 渲染单词颜色
-                var coloredHtml='';
-                for(var i=0;i<words.length;i++){
-                    var w=words[i],cls=badSet[i]?'bad':'good';
-                    if(badSet[i]){
-                        coloredHtml+='<span class="word-inline '+cls+'" onclick="playWord(\''+w.w.replace(/'/g,"\\'")+'\',\''+w.phonetic.replace(/'/g,"\\'")+'\')" title="发音需练习，点击听标准音">'+w.w+'</span> ';
-                    }else{
-                        coloredHtml+='<span class="word-inline '+cls+'" title="'+w.phonetic+' — 发音正确 ✓">'+w.w+'</span> ';
-                    }
+                if(!matched)badSet[i]=true;
+            }
+            
+            var badCount=Object.keys(badSet).length;
+            var goodCount=words.length-badCount;
+            var score=words.length===0?80:Math.min(98,Math.round((goodCount/words.length)*90+8));
+            
+            document.getElementById('enScoreFill').style.width=score+'%';
+            document.getElementById('enScoreText').textContent='句子得分: '+score+'分 ('+goodCount+'/'+words.length+' 准确)';
+            
+            var coloredHtml='';
+            for(var i=0;i<words.length;i++){
+                var w=words[i],cls=badSet[i]?'bad':'good';
+                if(badSet[i]){
+                    coloredHtml+='<span class="word-inline '+cls+'" onclick="playWord(\''+w.w.replace(/'/g,"\\'")+'\',\''+w.phonetic.replace(/'/g,"\\'")+'\')" title="发音需练习，点击听标准音">'+w.w+'</span> ';
+                }else{
+                    coloredHtml+='<span class="word-inline '+cls+'" title="发音正确 ✓">'+w.w+'</span> ';
                 }
-                document.getElementById('enSentence').innerHTML=coloredHtml.trim();
-                document.getElementById('enAutoNext').classList.add('hidden');
-            };
-            
-            rec.onerror=function(err){
-                // 语音识别失败，降级为全绿（不做随机标红）
-                fallbackAllGood(words);
-                document.getElementById('enScoreText').textContent+=' (语音识别未启用)';
-            };
-            
-            rec.onnomatch=function(){
-                // 什么都没识别到，全部标红
+            }
+            document.getElementById('enSentence').innerHTML=coloredHtml.trim();
+            document.getElementById('enAutoNext').classList.add('hidden');
+            addPoints(5);
+        };
+        
+        rec.onerror=function(err){
+            STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');
+            STATE.enRecognition=null;
+            var words=sent.words||[];
+            // 根据不同错误类型处理
+            if(err.error==='no-speech' || err.error==='aborted'){
                 fallbackAllBad(words);
-                document.getElementById('enScoreText').textContent='句子得分: 0分 (未识别到语音)';
-            };
-            
-            rec.start();
-            setTimeout(function(){try{rec.stop();}catch(e){}}, 4000);
-        }else{
-            // 浏览器不支持语音识别，全部标绿
-            fallbackAllGood(words);
-            document.getElementById('enScoreText').textContent+=' (需Chrome浏览器)';
-        }
-    }
+                document.getElementById('enScoreText').textContent='句子得分: 0分 (未检测到语音)';
+            }else if(err.error==='not-allowed'){
+                fallbackAllGood(words);
+                document.getElementById('enScoreText').textContent='句子得分: 85分 (麦克风权限被拒绝)';
+                toast('请允许麦克风权限后重试');
+            }else{
+                fallbackAllGood(words);
+                document.getElementById('enScoreText').textContent='句子得分: 85分 (识别错误: '+err.error+')';
+            }
+            addPoints(2);
+        };
+        
+        rec.onnomatch=function(){
+            STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');
+            STATE.enRecognition=null;
+            var words=sent.words||[];
+            fallbackAllBad(words);
+            document.getElementById('enScoreText').textContent='句子得分: 0分 (未识别到匹配内容)';
+            addPoints(2);
+        };
+        
+        rec.start();
+    });
     
     function fallbackAllGood(words){
         var score=words.length>0?85:80;
