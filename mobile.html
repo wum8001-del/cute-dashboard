@@ -786,29 +786,41 @@ function bindLangEvents(){
         // 使用 SpeechRecognition 直接收音+识别
         var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
         if(!SR){toast('当前浏览器不支持语音识别，请使用Chrome');return;}
-        var rec=new SR();rec.lang='en-US';rec.interimResults=false;rec.maxAlternatives=1;
+        var rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=true;rec.maxAlternatives=1;
         STATE.enRecognition=rec;
         STATE.enIsRecording=true;
         btn.textContent='⏹ 停止';btn.classList.add('recording');
         document.getElementById('enScoreFill').style.width='30%';
-        document.getElementById('enScoreText').textContent='正在聆听...（读完自动停止）';
+        document.getElementById('enScoreText').textContent='正在聆听...（读完点⏹评分）';
         
-        // 6秒超时自动停止
+        // 15秒超时自动停止（防止忘记点停止）
         STATE._recTimeout=setTimeout(function(){
             if(STATE.enIsRecording && STATE.enRecognition){
                 try{STATE.enRecognition.stop();}catch(e){}
             }
-        },6000);
+        },15000);
+        
+        STATE._recTranscript='';  // 累积转录文本
+        STATE._recEnded=false;     // 防止onend重复处理
         
         rec.onresult=function(e){
+            // 累积所有识别结果
+            for(var i=e.resultIndex;i<e.results.length;i++){
+                STATE._recTranscript+=e.results[i][0].transcript+' ';
+            }
+            // 更新提示显示当前识别到的文字
+            var preview=STATE._recTranscript.trim();
+            if(preview)document.getElementById('enScoreText').textContent='听到: '+preview.substring(0,30)+(preview.length>30?'...':'')+' (读完点⏹)';
+        };
+        
+        rec.onend=function(){
+            if(STATE._recEnded)return;STATE._recEnded=true;
             clearTimeout(STATE._recTimeout);
             STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');
             STATE.enRecognition=null;
             
-            var transcript=e.results[0][0].transcript.toLowerCase().replace(/[^a-z0-9\s]/g,'').trim();
-            var confidence=e.results[0][0].confidence||0;
+            var transcript=(STATE._recTranscript||'').toLowerCase().replace(/[^a-z0-9\s]/g,'').trim();
             var words=sent.words||[];
-            var targetText=sent.en.toLowerCase().replace(/[^a-z0-9\s]/g,'').trim();
             var spokenWords=transcript.split(/\s+/).filter(function(w){return w.length>0;});
             
             // 如果没有识别到任何内容
@@ -859,6 +871,7 @@ function bindLangEvents(){
         };
         
         rec.onerror=function(err){
+            STATE._recEnded=true;
             clearTimeout(STATE._recTimeout);
             STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');
             STATE.enRecognition=null;
@@ -879,6 +892,7 @@ function bindLangEvents(){
         };
         
         rec.onnomatch=function(){
+            STATE._recEnded=true;
             clearTimeout(STATE._recTimeout);
             STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');
             STATE.enRecognition=null;

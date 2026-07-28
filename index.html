@@ -712,17 +712,26 @@ function bindLangEvents(){
     
     function doRecordWithSR(btn,targetText,words){
         var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-        var rec=new SR();rec.lang='en-US';rec.interimResults=false;rec.maxAlternatives=1;
+        var rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=true;rec.maxAlternatives=1;
         STATE.enRecognition=rec;STATE.enIsRecording=true;
         btn.textContent='⏹ 停止';btn.classList.add('recording');
         document.getElementById('enScoreFill').style.width='30%';
-        document.getElementById('enScoreText').textContent='正在聆听...（读完自动停止）';
+        document.getElementById('enScoreText').textContent='正在聆听...（读完点⏹评分）';
         
-        STATE._recTimeout=setTimeout(function(){if(STATE.enIsRecording&&STATE.enRecognition){try{STATE.enRecognition.stop();}catch(e){}}},6000);
+        STATE._recTranscript='';STATE._recEnded=false;
+        STATE._recTimeout=setTimeout(function(){if(STATE.enIsRecording&&STATE.enRecognition){try{STATE.enRecognition.stop();}catch(e){}}},15000);
         rec.onresult=function(e){
+            for(var i=e.resultIndex;i<e.results.length;i++){
+                STATE._recTranscript+=e.results[i][0].transcript+' ';
+            }
+            var preview=STATE._recTranscript.trim();
+            if(preview)document.getElementById('enScoreText').textContent='听到: '+preview.substring(0,30)+(preview.length>30?'...':'')+' (读完点⏹)';
+        };
+        rec.onend=function(){
+            if(STATE._recEnded)return;STATE._recEnded=true;
             clearTimeout(STATE._recTimeout);
             STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');STATE.enRecognition=null;
-            var transcript=e.results[0][0].transcript.toLowerCase().replace(/[^a-z0-9\s]/g,'').trim();
+            var transcript=(STATE._recTranscript||'').toLowerCase().replace(/[^a-z0-9\s]/g,'').trim();
             var spokenWords=transcript.split(/\s+/).filter(function(w){return w.length>0;});
             
             if(spokenWords.length===0){
@@ -770,6 +779,7 @@ function bindLangEvents(){
         };
         
         rec.onerror=function(err){
+            STATE._recEnded=true;
             clearTimeout(STATE._recTimeout);
             STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');STATE.enRecognition=null;
             if(err.error==='no-speech' || err.error==='aborted'){
@@ -783,6 +793,7 @@ function bindLangEvents(){
         };
         
         rec.onnomatch=function(){
+            STATE._recEnded=true;
             clearTimeout(STATE._recTimeout);
             STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');STATE.enRecognition=null;
             fallbackAllBad(words);document.getElementById('enScoreText').textContent='句子得分: 0分 (未识别到匹配内容)';
@@ -794,19 +805,28 @@ function bindLangEvents(){
     
     function doFreeRecordWithSR(btn,text){
         var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-        var rec=new SR();rec.lang='en-US';rec.interimResults=false;rec.maxAlternatives=1;
+        var rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=true;rec.maxAlternatives=1;
         STATE.enRecognition=rec;STATE.enIsRecording=true;
         btn.textContent='⏹ 停止';btn.classList.add('recording');
         document.getElementById('enScoreFill').style.width='30%';
-        document.getElementById('enScoreText').textContent='正在聆听...（读完自动停止）';
+        document.getElementById('enScoreText').textContent='正在聆听...（读完点⏹评分）';
         var words=text.split(/\s+/).filter(function(w){return w.length>0;});
         var targetText=text.toLowerCase().replace(/[^a-z0-9\s]/g,'').trim();
         
-        STATE._recTimeout=setTimeout(function(){if(STATE.enIsRecording&&STATE.enRecognition){try{STATE.enRecognition.stop();}catch(e){}}},6000);
+        STATE._recTranscript='';STATE._recEnded=false;
+        STATE._recTimeout=setTimeout(function(){if(STATE.enIsRecording&&STATE.enRecognition){try{STATE.enRecognition.stop();}catch(e){}}},15000);
         rec.onresult=function(e){
+            for(var i=e.resultIndex;i<e.results.length;i++){
+                STATE._recTranscript+=e.results[i][0].transcript+' ';
+            }
+            var preview=STATE._recTranscript.trim();
+            if(preview)document.getElementById('enScoreText').textContent='听到: '+preview.substring(0,30)+(preview.length>30?'...':'')+' (读完点⏹)';
+        };
+        rec.onend=function(){
+            if(STATE._recEnded)return;STATE._recEnded=true;
             clearTimeout(STATE._recTimeout);
             STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');STATE.enRecognition=null;
-            var transcript=e.results[0][0].transcript.toLowerCase().replace(/[^a-z0-9\s]/g,'').trim();
+            var transcript=(STATE._recTranscript||'').toLowerCase().replace(/[^a-z0-9\s]/g,'').trim();
             var spokenWords=transcript.split(/\s+/).filter(function(w){return w.length>0;});
             
             if(spokenWords.length===0){
@@ -854,6 +874,7 @@ function bindLangEvents(){
         };
         
         rec.onerror=function(err){
+            STATE._recEnded=true;
             clearTimeout(STATE._recTimeout);
             STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');STATE.enRecognition=null;
             document.getElementById('enScoreFill').style.width='85%';
@@ -864,6 +885,7 @@ function bindLangEvents(){
         };
         
         rec.onnomatch=function(){
+            STATE._recEnded=true;
             clearTimeout(STATE._recTimeout);
             STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');STATE.enRecognition=null;
             document.getElementById('enScoreFill').style.width='10%';
