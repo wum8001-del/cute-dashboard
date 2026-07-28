@@ -692,7 +692,11 @@ function bindLangEvents(){
     document.getElementById('enRecordBtn').addEventListener('click',function(){
         var btn=document.getElementById('enRecordBtn');
         if(STATE.enIsRecording){
-            if(STATE.enRecognition)STATE.enRecognition.stop();
+            if(STATE.enRecognition){try{STATE.enRecognition.abort();}catch(e){}}
+            STATE.enIsRecording=false;STATE.enRecognition=null;
+            btn.textContent='🎤';btn.classList.remove('recording');
+            document.getElementById('enScoreText').textContent='已取消录音';
+            document.getElementById('enScoreFill').style.width='0%';
             return;
         }
         var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -715,9 +719,11 @@ function bindLangEvents(){
         STATE.enRecognition=rec;STATE.enIsRecording=true;
         btn.textContent='⏹ 停止';btn.classList.add('recording');
         document.getElementById('enScoreFill').style.width='30%';
-        document.getElementById('enScoreText').textContent='正在聆听...';
+        document.getElementById('enScoreText').textContent='正在聆听...（读完自动停止）';
         
+        STATE._recTimeout=setTimeout(function(){if(STATE.enIsRecording&&STATE.enRecognition){try{STATE.enRecognition.stop();}catch(e){}}},6000);
         rec.onresult=function(e){
+            clearTimeout(STATE._recTimeout);
             STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');STATE.enRecognition=null;
             var transcript=e.results[0][0].transcript.toLowerCase().replace(/[^a-z0-9\s]/g,'').trim();
             var spokenWords=transcript.split(/\s+/).filter(function(w){return w.length>0;});
@@ -767,6 +773,7 @@ function bindLangEvents(){
         };
         
         rec.onerror=function(err){
+            clearTimeout(STATE._recTimeout);
             STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');STATE.enRecognition=null;
             if(err.error==='no-speech' || err.error==='aborted'){
                 fallbackAllBad(words);document.getElementById('enScoreText').textContent='句子得分: 0分 (未检测到语音)';
@@ -779,6 +786,7 @@ function bindLangEvents(){
         };
         
         rec.onnomatch=function(){
+            clearTimeout(STATE._recTimeout);
             STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');STATE.enRecognition=null;
             fallbackAllBad(words);document.getElementById('enScoreText').textContent='句子得分: 0分 (未识别到匹配内容)';
             addPoints(2);
@@ -793,11 +801,13 @@ function bindLangEvents(){
         STATE.enRecognition=rec;STATE.enIsRecording=true;
         btn.textContent='⏹ 停止';btn.classList.add('recording');
         document.getElementById('enScoreFill').style.width='30%';
-        document.getElementById('enScoreText').textContent='正在聆听...';
+        document.getElementById('enScoreText').textContent='正在聆听...（读完自动停止）';
         var words=text.split(/\s+/).filter(function(w){return w.length>0;});
         var targetText=text.toLowerCase().replace(/[^a-z0-9\s]/g,'').trim();
         
+        STATE._recTimeout=setTimeout(function(){if(STATE.enIsRecording&&STATE.enRecognition){try{STATE.enRecognition.stop();}catch(e){}}},6000);
         rec.onresult=function(e){
+            clearTimeout(STATE._recTimeout);
             STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');STATE.enRecognition=null;
             var transcript=e.results[0][0].transcript.toLowerCase().replace(/[^a-z0-9\s]/g,'').trim();
             var spokenWords=transcript.split(/\s+/).filter(function(w){return w.length>0;});
@@ -847,6 +857,7 @@ function bindLangEvents(){
         };
         
         rec.onerror=function(err){
+            clearTimeout(STATE._recTimeout);
             STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');STATE.enRecognition=null;
             document.getElementById('enScoreFill').style.width='85%';
             document.getElementById('enScoreText').textContent='句子得分: 85分 (识别错误)';
@@ -856,6 +867,7 @@ function bindLangEvents(){
         };
         
         rec.onnomatch=function(){
+            clearTimeout(STATE._recTimeout);
             STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');STATE.enRecognition=null;
             document.getElementById('enScoreFill').style.width='10%';
             document.getElementById('enScoreText').textContent='句子得分: 0分 (未识别到匹配内容)';

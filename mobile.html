@@ -776,7 +776,16 @@ function bindLangEvents(){
         var btn=document.getElementById('enRecordBtn');
         // 如果正在录音，点击停止
         if(STATE.enIsRecording){
-            if(STATE.enRecognition)STATE.enRecognition.stop();
+            clearTimeout(STATE._recTimeout);
+            if(STATE.enRecognition){
+                try{STATE.enRecognition.abort();}catch(e){}
+            }
+            STATE.enIsRecording=false;
+            STATE.enRecognition=null;
+            btn.textContent='🎤';
+            btn.classList.remove('recording');
+            document.getElementById('enScoreText').textContent='已取消录音';
+            document.getElementById('enScoreFill').style.width='0%';
             return;
         }
         var sents=enDialogue.sentences;var sent=sents[STATE.enSentenceIdx%sents.length];
@@ -788,9 +797,17 @@ function bindLangEvents(){
         STATE.enIsRecording=true;
         btn.textContent='⏹ 停止';btn.classList.add('recording');
         document.getElementById('enScoreFill').style.width='30%';
-        document.getElementById('enScoreText').textContent='正在聆听...';
+        document.getElementById('enScoreText').textContent='正在聆听...（读完自动停止）';
+        
+        // 6秒超时自动停止
+        STATE._recTimeout=setTimeout(function(){
+            if(STATE.enIsRecording && STATE.enRecognition){
+                try{STATE.enRecognition.stop();}catch(e){}
+            }
+        },6000);
         
         rec.onresult=function(e){
+            clearTimeout(STATE._recTimeout);
             STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');
             STATE.enRecognition=null;
             
@@ -848,6 +865,7 @@ function bindLangEvents(){
         };
         
         rec.onerror=function(err){
+            clearTimeout(STATE._recTimeout);
             STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');
             STATE.enRecognition=null;
             var words=sent.words||[];
@@ -867,6 +885,7 @@ function bindLangEvents(){
         };
         
         rec.onnomatch=function(){
+            clearTimeout(STATE._recTimeout);
             STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');
             STATE.enRecognition=null;
             var words=sent.words||[];
