@@ -190,6 +190,9 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex
 /* toast */
 .toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:var(--text);color:white;padding:8px 20px;border-radius:14px;font-size:0.82rem;z-index:999;animation:toastIn 0.3s ease}
 @keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+/* 音标提示 */
+.en-phonetic-tip{text-align:center;font-size:1rem;color:var(--accent);font-weight:600;letter-spacing:1px;opacity:0;transform:translateY(-6px);transition:opacity 0.3s,transform 0.3s;height:0;overflow:hidden}
+.en-phonetic-tip.show{opacity:1;transform:translateY(0);height:auto;margin:4px 0}
 .hidden{display:none}
 @media(max-width:1100px){.dashboard{grid-template-columns:1fr 1fr}}
 @media(max-width:768px){.sidebar{display:none}.main-wrapper{margin-left:0}.dashboard{grid-template-columns:1fr}}
@@ -542,6 +545,7 @@ function bindLangEvents(){
                     '<p class="en-sentence-label">💬 第 <span id="enSentIdx">1</span>/<span id="enSentTotal">'+sentsTotal+'</span> 句</p>'+
                     '<p class="en-sentence" id="enSentence">点击下方开始跟读~</p>'+
                     '<p class="en-translation" id="enTranslation"></p>'+
+                    '<p class="en-phonetic-tip" id="enPhoneticTip"></p>'+
                 '</div>'+
                 '<div class="word-feedback hidden" id="enWordFeedback"><h4>🔍 逐词分析</h4><div class="word-list" id="enWordList"></div></div>'+
                 '<div class="btn-row">'+
@@ -752,7 +756,7 @@ function bindLangEvents(){
                 for(var i=0;i<words.length;i++){
                     var w=words[i],cls=badSet[i]?'bad':'good';
                     if(badSet[i]){
-                        coloredHtml+='<span class="word-inline '+cls+'" onclick="playWord(\''+w.w.replace(/'/g,"\\'")+'\')" title="'+w.phonetic+' — 发音需练习，点击听标准音">'+w.w+'</span> ';
+                        coloredHtml+='<span class="word-inline '+cls+'" onclick="playWord(\''+w.w.replace(/'/g,"\\'")+'\',\''+w.phonetic.replace(/'/g,"\\'")+'\')" title="发音需练习，点击听标准音">'+w.w+'</span> ';
                     }else{
                         coloredHtml+='<span class="word-inline '+cls+'" title="'+w.phonetic+' — 发音正确 ✓">'+w.w+'</span> ';
                     }
@@ -797,7 +801,7 @@ function bindLangEvents(){
         var html='';
         for(var i=0;i<words.length;i++){
             var w=words[i];
-            html+='<span class="word-inline bad" onclick="playWord(\''+w.w.replace(/'/g,"\\'")+'\')" title="'+w.phonetic+' — 点击听标准音">'+w.w+'</span> ';
+            html+='<span class="word-inline bad" onclick="playWord(\''+w.w.replace(/'/g,"\\'")+'\',\''+w.phonetic.replace(/'/g,"\\'")+'\')" title="点击听标准音">'+w.w+'</span> ';
         }
         document.getElementById('enSentence').innerHTML=html.trim();
         document.getElementById('enAutoNext').classList.add('hidden');
@@ -817,12 +821,21 @@ function bindLangEvents(){
         return matrix[b.length][a.length];
     }
 
-    // 点击红词播放标准发音
-    window.playWord=function(word){
+    // 点击红词播放标准发音 + 显示音标
+    window.playWord=function(word,phonetic){
         if('speechSynthesis' in window){
             window.speechSynthesis.cancel();
             var u=new SpeechSynthesisUtterance(word);u.lang='en-US';u.rate=0.7;
             window.speechSynthesis.speak(u);
+        }
+        if(phonetic){
+            var tip=document.getElementById('enPhoneticTip');
+            if(tip){
+                tip.textContent='/ '+phonetic+' /';
+                tip.classList.add('show');
+                clearTimeout(tip._timeout);
+                tip._timeout=setTimeout(function(){tip.classList.remove('show');},2500);
+            }
         }
     };
 
