@@ -693,7 +693,12 @@ function bindLangEvents(){
         var btn=document.getElementById('enRecordBtn');
         if(STATE.enIsRecording){
             clearTimeout(STATE._recTimeout);
-            if(STATE.enRecognition){try{STATE.enRecognition.stop();}catch(e){}}
+            STATE.enIsRecording=false;
+            if(STATE.enRecognition){try{STATE.enRecognition.abort();}catch(e){}}
+            STATE.enRecognition=null;
+            btn.textContent='🎤';btn.classList.remove('recording');
+            document.getElementById('enScoreText').textContent='已取消';
+            document.getElementById('enScoreFill').style.width='0%';
             return;
         }
         var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -701,7 +706,7 @@ function bindLangEvents(){
         
         if(hasDialogueData){
             var sents=enDialogue.sentences;var sent=sents[STATE.enSentenceIdx%sents.length];
-            doRecordWithSR(btn,sent.en,sent.words||[]);
+            doRecordWithSR(btn,sent.words||[]);
         }else{
             var text=document.getElementById('enFreeInput').value.trim();
             if(!text){toast('请先输入英文句子');return;}
@@ -710,46 +715,50 @@ function bindLangEvents(){
         }
     });
     
-    function doRecordWithSR(btn,targetText,words){
+    function doRecordWithSR(btn,words){
         var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-        var rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=true;rec.maxAlternatives=1;
-        STATE.enRecognition=rec;STATE.enIsRecording=true;
-        btn.textContent='⏹ 停止';btn.classList.add('recording');
-        document.getElementById('enScoreFill').style.width='30%';
-        document.getElementById('enScoreText').textContent='正在聆听...（读完点⏹评分）';
+        var rec=new SR();
+        rec.lang='en-US';
+        rec.continuous=false;
+        rec.interimResults=false;
+        rec.maxAlternatives=1;
         
-        STATE._recTranscript='';STATE._recEnded=false;
-        STATE._recTimeout=setTimeout(function(){if(STATE.enIsRecording&&STATE.enRecognition){try{STATE.enRecognition.stop();}catch(e){}}},15000);
+        STATE.enRecognition=rec;
+        STATE.enIsRecording=true;
+        btn.textContent='⏹ 取消';btn.classList.add('recording');
+        document.getElementById('enScoreFill').style.width='20%';
+        document.getElementById('enScoreText').textContent='正在听... 读完自动评分';
+        
+        STATE._recTimeout=setTimeout(function(){if(STATE.enIsRecording){try{rec.stop();}catch(e){}}},10000);
+        
         rec.onresult=function(e){
-            for(var i=e.resultIndex;i<e.results.length;i++){
-                STATE._recTranscript+=e.results[i][0].transcript+' ';
-            }
-            var preview=STATE._recTranscript.trim();
-            if(preview)document.getElementById('enScoreText').textContent='听到: '+preview.substring(0,30)+(preview.length>30?'...':'')+' (读完点⏹)';
-        };
-        rec.onend=function(){
-            if(STATE._recEnded)return;STATE._recEnded=true;
             clearTimeout(STATE._recTimeout);
-            STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');STATE.enRecognition=null;
-            var transcript=(STATE._recTranscript||'').toLowerCase().replace(/[^a-z0-9\s]/g,'').trim();
-            var spokenWords=transcript.split(/\s+/).filter(function(w){return w.length>0;});
+            STATE.enIsRecording=false;STATE.enRecognition=null;
+            btn.textContent='🎤';btn.classList.remove('recording');
+            
+            var spoken=e.results[0][0].transcript.toLowerCase().replace(/[^a-z0-9\s]/g,'').trim();
+            var spokenWords=spoken.split(/\s+/).filter(function(w){return w.length>0;});
             
             if(spokenWords.length===0){
-                fallbackAllBad(words);
-                document.getElementById('enScoreText').textContent='句子得分: 0分 (未识别到语音，请大声朗读)';
-                addPoints(2);return;
+                document.getElementById('enScoreFill').style.width='10%';
+                document.getElementById('enScoreText').textContent='未识别到语音，请大声朗读';
+                var html='';
+                for(var i=0;i<words.length;i++){
+                    html+='<span class="word-inline bad" onclick="playWord(\''+words[i].w.replace(/'/g,"\\'")+'\',\''+words[i].phonetic.replace(/'/g,"\\'")+'\')" title="点击听标准音">'+words[i].w+'</span> ';
+                }
+                document.getElementById('enSentence').innerHTML=html.trim();
+                return;
             }
             
             var badSet={};var goodSet={};
             for(var i=0;i<words.length;i++){
-                var tw=words[i].w.toLowerCase().replace(/[^a-z]/g,'');
+                var tw=words[i].w.toLowerCase().replace(/[^a-z]/g,'');if(!tw)continue;
                 var matched=false;
                 for(var j=0;j<spokenWords.length;j++){
                     if(spokenWords[j] && !goodSet[j]){
                         var sw=spokenWords[j].replace(/[^a-z]/g,'');
                         var dist=levenshteinDistance(tw,sw);
-                        var threshold=Math.max(1,Math.floor(tw.length*0.3));
-                        if(dist<=threshold || sw===tw || sw.indexOf(tw)!==-1 || tw.indexOf(sw)!==-1){
+                        if(dist<=Math.max(1,Math.floor(tw.length*0.3)) || sw===tw || sw.indexOf(tw)!==-1 || tw.indexOf(sw)!==-1){
                             matched=true;goodSet[j]=true;break;
                         }
                     }
@@ -762,42 +771,27 @@ function bindLangEvents(){
             var score=words.length===0?80:Math.min(98,Math.round((goodCount/words.length)*90+8));
             
             document.getElementById('enScoreFill').style.width=score+'%';
-            document.getElementById('enScoreText').textContent='句子得分: '+score+'分 ('+goodCount+'/'+words.length+' 准确)';
+            document.getElementById('enScoreText').textContent='得分: '+score+'分 ('+goodCount+'/'+words.length+' 正确)';
             
             var coloredHtml='';
             for(var i=0;i<words.length;i++){
-                var w=words[i],cls=badSet[i]?'bad':'good';
+                var w=words[i];
                 if(badSet[i]){
-                    coloredHtml+='<span class="word-inline '+cls+'" onclick="playWord(\''+w.w.replace(/'/g,"\\'")+'\',\''+w.phonetic.replace(/'/g,"\\'")+'\')" title="发音需练习，点击听标准音">'+w.w+'</span> ';
+                    coloredHtml+='<span class="word-inline bad" onclick="playWord(\''+w.w.replace(/'/g,"\\'")+'\',\''+w.phonetic.replace(/'/g,"\\'")+'\')" title="点击听标准音">'+w.w+'</span> ';
                 }else{
-                    coloredHtml+='<span class="word-inline '+cls+'" title="发音正确 ✓">'+w.w+'</span> ';
+                    coloredHtml+='<span class="word-inline good" title="发音正确 ✓">'+w.w+'</span> ';
                 }
             }
             document.getElementById('enSentence').innerHTML=coloredHtml.trim();
-            document.getElementById('enAutoNext').classList.add('hidden');
             addPoints(5);
         };
         
         rec.onerror=function(err){
-            STATE._recEnded=true;
             clearTimeout(STATE._recTimeout);
-            STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');STATE.enRecognition=null;
-            if(err.error==='no-speech' || err.error==='aborted'){
-                fallbackAllBad(words);document.getElementById('enScoreText').textContent='句子得分: 0分 (未检测到语音)';
-            }else if(err.error==='not-allowed'){
-                fallbackAllGood(words);document.getElementById('enScoreText').textContent='句子得分: 85分 (麦克风权限被拒绝)';toast('请允许麦克风权限后重试');
-            }else{
-                fallbackAllGood(words);document.getElementById('enScoreText').textContent='句子得分: 85分 (识别错误: '+err.error+')';
-            }
-            addPoints(2);
-        };
-        
-        rec.onnomatch=function(){
-            STATE._recEnded=true;
-            clearTimeout(STATE._recTimeout);
-            STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');STATE.enRecognition=null;
-            fallbackAllBad(words);document.getElementById('enScoreText').textContent='句子得分: 0分 (未识别到匹配内容)';
-            addPoints(2);
+            STATE.enIsRecording=false;STATE.enRecognition=null;
+            btn.textContent='🎤';btn.classList.remove('recording');
+            document.getElementById('enScoreFill').style.width='0%';
+            document.getElementById('enScoreText').textContent=err.error==='no-speech'?'未检测到语音，请重试':'识别出错: '+err.error;
         };
         
         rec.start();
@@ -805,48 +799,45 @@ function bindLangEvents(){
     
     function doFreeRecordWithSR(btn,text){
         var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-        var rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=true;rec.maxAlternatives=1;
-        STATE.enRecognition=rec;STATE.enIsRecording=true;
-        btn.textContent='⏹ 停止';btn.classList.add('recording');
-        document.getElementById('enScoreFill').style.width='30%';
-        document.getElementById('enScoreText').textContent='正在聆听...（读完点⏹评分）';
-        var words=text.split(/\s+/).filter(function(w){return w.length>0;});
-        var targetText=text.toLowerCase().replace(/[^a-z0-9\s]/g,'').trim();
+        var rec=new SR();
+        rec.lang='en-US';
+        rec.continuous=false;
+        rec.interimResults=false;
+        rec.maxAlternatives=1;
         
-        STATE._recTranscript='';STATE._recEnded=false;
-        STATE._recTimeout=setTimeout(function(){if(STATE.enIsRecording&&STATE.enRecognition){try{STATE.enRecognition.stop();}catch(e){}}},15000);
+        STATE.enRecognition=rec;
+        STATE.enIsRecording=true;
+        btn.textContent='⏹ 取消';btn.classList.add('recording');
+        document.getElementById('enScoreFill').style.width='20%';
+        document.getElementById('enScoreText').textContent='正在听... 读完自动评分';
+        
+        STATE._recTimeout=setTimeout(function(){if(STATE.enIsRecording){try{rec.stop();}catch(e){}}},10000);
+        
+        var words=text.split(/\s+/).filter(function(w){return w.length>0;});
+        
         rec.onresult=function(e){
-            for(var i=e.resultIndex;i<e.results.length;i++){
-                STATE._recTranscript+=e.results[i][0].transcript+' ';
-            }
-            var preview=STATE._recTranscript.trim();
-            if(preview)document.getElementById('enScoreText').textContent='听到: '+preview.substring(0,30)+(preview.length>30?'...':'')+' (读完点⏹)';
-        };
-        rec.onend=function(){
-            if(STATE._recEnded)return;STATE._recEnded=true;
             clearTimeout(STATE._recTimeout);
-            STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');STATE.enRecognition=null;
-            var transcript=(STATE._recTranscript||'').toLowerCase().replace(/[^a-z0-9\s]/g,'').trim();
-            var spokenWords=transcript.split(/\s+/).filter(function(w){return w.length>0;});
+            STATE.enIsRecording=false;STATE.enRecognition=null;
+            btn.textContent='🎤';btn.classList.remove('recording');
+            
+            var spoken=e.results[0][0].transcript.toLowerCase().replace(/[^a-z0-9\s]/g,'').trim();
+            var spokenWords=spoken.split(/\s+/).filter(function(w){return w.length>0;});
             
             if(spokenWords.length===0){
                 document.getElementById('enScoreFill').style.width='10%';
-                document.getElementById('enScoreText').textContent='句子得分: 0分 (未识别到语音)';
-                var html='';for(var i=0;i<words.length;i++){html+='<span class="word-inline bad" onclick="playWord(&quot;'+words[i]+'&quot;)" title="点击听标准音">'+words[i]+'</span> ';}
-                document.getElementById('enSentence').innerHTML=html.trim();
-                addPoints(2);return;
+                document.getElementById('enScoreText').textContent='未识别到语音';
+                return;
             }
             
             var badSet={};var goodSet={};
             for(var i=0;i<words.length;i++){
-                var tw=words[i].toLowerCase().replace(/[^a-z]/g,'');
+                var tw=words[i].toLowerCase().replace(/[^a-z]/g,'');if(!tw)continue;
                 var matched=false;
                 for(var j=0;j<spokenWords.length;j++){
                     if(spokenWords[j] && !goodSet[j]){
                         var sw=spokenWords[j].replace(/[^a-z]/g,'');
                         var dist=levenshteinDistance(tw,sw);
-                        var threshold=Math.max(1,Math.floor(tw.length*0.3));
-                        if(dist<=threshold || sw===tw || sw.indexOf(tw)!==-1 || tw.indexOf(sw)!==-1){
+                        if(dist<=Math.max(1,Math.floor(tw.length*0.3)) || sw===tw || sw.indexOf(tw)!==-1 || tw.indexOf(sw)!==-1){
                             matched=true;goodSet[j]=true;break;
                         }
                     }
@@ -857,14 +848,15 @@ function bindLangEvents(){
             var badCount=Object.keys(badSet).length;
             var goodCount=words.length-badCount;
             var score=words.length===0?80:Math.min(98,Math.round((goodCount/words.length)*90+8));
+            
             document.getElementById('enScoreFill').style.width=score+'%';
-            document.getElementById('enScoreText').textContent='句子得分: '+score+'分 ('+goodCount+'/'+words.length+' 准确)';
+            document.getElementById('enScoreText').textContent='得分: '+score+'分 ('+goodCount+'/'+words.length+' 正确)';
             
             var html='';
             for(var i=0;i<words.length;i++){
                 var w=words[i].replace(/[.,!?;:'\"]/g,''),cls=badSet[i]?'bad':'good';
                 if(badSet[i]){
-                    html+='<span class="word-inline '+cls+'" onclick="playWord(&quot;'+w+'&quot;)" title="发音需练习，点击听标准音">'+words[i]+'</span> ';
+                    html+='<span class="word-inline '+cls+'" onclick="playWord(&quot;'+w+'&quot;)" title="点击听标准音">'+words[i]+'</span> ';
                 }else{
                     html+='<span class="word-inline '+cls+'" title="发音正确 ✓">'+words[i]+'</span> ';
                 }
@@ -874,25 +866,10 @@ function bindLangEvents(){
         };
         
         rec.onerror=function(err){
-            STATE._recEnded=true;
             clearTimeout(STATE._recTimeout);
-            STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');STATE.enRecognition=null;
-            document.getElementById('enScoreFill').style.width='85%';
-            document.getElementById('enScoreText').textContent='句子得分: 85分 (识别错误)';
-            var html='';for(var i=0;i<words.length;i++){html+='<span class="word-inline good">'+words[i]+'</span> ';}
-            document.getElementById('enSentence').innerHTML=html.trim();
-            addPoints(2);
-        };
-        
-        rec.onnomatch=function(){
-            STATE._recEnded=true;
-            clearTimeout(STATE._recTimeout);
-            STATE.enIsRecording=false;btn.textContent='🎤';btn.classList.remove('recording');STATE.enRecognition=null;
-            document.getElementById('enScoreFill').style.width='10%';
-            document.getElementById('enScoreText').textContent='句子得分: 0分 (未识别到匹配内容)';
-            var html='';for(var i=0;i<words.length;i++){html+='<span class="word-inline bad" onclick="playWord(&quot;'+words[i]+'&quot;)" title="点击听标准音">'+words[i]+'</span> ';}
-            document.getElementById('enSentence').innerHTML=html.trim();
-            addPoints(2);
+            STATE.enIsRecording=false;STATE.enRecognition=null;
+            btn.textContent='🎤';btn.classList.remove('recording');
+            document.getElementById('enScoreText').textContent='识别出错，请重试';
         };
         
         rec.start();
