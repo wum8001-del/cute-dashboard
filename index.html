@@ -692,11 +692,8 @@ function bindLangEvents(){
     document.getElementById('enRecordBtn').addEventListener('click',function(){
         var btn=document.getElementById('enRecordBtn');
         if(STATE.enIsRecording){
-            if(STATE.enRecognition){try{STATE.enRecognition.abort();}catch(e){}}
-            STATE.enIsRecording=false;STATE.enRecognition=null;
-            btn.textContent='🎤';btn.classList.remove('recording');
-            document.getElementById('enScoreText').textContent='已取消录音';
-            document.getElementById('enScoreFill').style.width='0%';
+            clearTimeout(STATE._recTimeout);
+            if(STATE.enRecognition){try{STATE.enRecognition.stop();}catch(e){}}
             return;
         }
         var SR=window.SpeechRecognition||window.webkitSpeechRecognition;

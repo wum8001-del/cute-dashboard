@@ -774,18 +774,12 @@ function bindLangEvents(){
 
     document.getElementById('enRecordBtn').addEventListener('click',function(){
         var btn=document.getElementById('enRecordBtn');
-        // 如果正在录音，点击停止
+        // 如果正在录音，点击结束录音 → 停止识别并进行评分
         if(STATE.enIsRecording){
             clearTimeout(STATE._recTimeout);
             if(STATE.enRecognition){
-                try{STATE.enRecognition.abort();}catch(e){}
+                try{STATE.enRecognition.stop();}catch(e){}
             }
-            STATE.enIsRecording=false;
-            STATE.enRecognition=null;
-            btn.textContent='🎤';
-            btn.classList.remove('recording');
-            document.getElementById('enScoreText').textContent='已取消录音';
-            document.getElementById('enScoreFill').style.width='0%';
             return;
         }
         var sents=enDialogue.sentences;var sent=sents[STATE.enSentenceIdx%sents.length];
